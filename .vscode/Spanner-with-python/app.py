@@ -1,3 +1,5 @@
+import os
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/path/to/keyfile.json'
 from flask import Flask, request
 from google.cloud import spanner
 
