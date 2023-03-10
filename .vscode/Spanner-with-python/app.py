@@ -1,68 +1,82 @@
-import os
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/path/to/keyfile.json'
+#import os
+#os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/path/to/keyfile.json'
 from flask import Flask, jsonify, request
 from google.cloud import spanner
 from google.cloud.spanner_v1 import KeySet
+from google.oauth2 import service_account
 
-app = Flask(__name__)
+# Set up credentials and Spanner client
+credentials = service_account.Credentials.from_service_account_file('/path/to/service_account.json')
+spanner_client = spanner.Client(project='your-project-id', credentials=credentials)
 instance_id = 'your-instance-id'
 database_id = 'your-database-id'
-client = spanner.Client()
-instance = client.instance(instance_id)
+instance = spanner_client.instance(instance_id)
 database = instance.database(database_id)
 
-# Define the users table name and columns
-users_table = 'users'
-users_columns = ['user_id', 'name', 'email', 'password']
+# Set up Flask application
+app = Flask(__name__)
 
-# API endpoint to get all users
+# Define routes for CRUD operations
 @app.route('/users', methods=['GET'])
 def get_users():
     with database.snapshot() as snapshot:
-        results = snapshot.execute_sql(f'SELECT * FROM {users_table}')
-        users = [dict(zip(users_columns, row)) for row in results]
+        # Query users table and return JSON response
+        rows = snapshot.execute_sql('SELECT * FROM users')
+        users = [{'user_id': row[0], 'name': row[1], 'email': row[2], 'password': row[3]} for row in rows]
         return jsonify(users)
 
-# API endpoint to get a specific user by ID
 @app.route('/users/<int:user_id>', methods=['GET'])
 def get_user(user_id):
     with database.snapshot() as snapshot:
-        results = snapshot.execute_sql(f'SELECT * FROM {users_table} WHERE user_id = @user_id', params={'user_id': user_id})
-        row = list(results)
-        if len(row) > 0:
-            user = dict(zip(users_columns, row[0]))
-            return jsonify(user)
-        else:
-            return f'User with ID {user_id} not found', 404
+        # Query users table for user with given ID and return JSON response
+        row = snapshot.execute_sql('SELECT * FROM users WHERE user_id = @user_id', params={'user_id': user_id}).single()
+        if row is None:
+            return jsonify({'error': 'User not found'}), 404
+        user = {'user_id': row[0], 'name': row[1], 'email': row[2], 'password': row[3]}
+        return jsonify(user)
 
-# API endpoint to create a new user
 @app.route('/users', methods=['POST'])
 def create_user():
-    user = request.get_json()
-    if not all(key in user for key in users_columns[1:]):
-        return 'Missing fields in request body', 400
+    data = request.get_json()
+    user_id = data.get('user_id')
+    name = data.get('name')
+    email = data.get('email')
+    password = data.get('password')
     with database.batch() as batch:
+        # Insert new user into users table
         batch.insert(
-            table=users_table,
-            columns=users_columns[1:],
-            values=[(user['name'], user['email'], user['password'])]
+            table='users',
+            columns=('user_id', 'name', 'email', 'password'),
+            values=[(user_id, name, email, password)]
         )
-    return 'User created successfully', 201
+    return jsonify({'message': 'User created successfully'})
 
-# API endpoint to update an existing user
 @app.route('/users/<int:user_id>', methods=['PUT'])
 def update_user(user_id):
-    user = request.get_json()
-    if not all(key in user for key in users_columns[1:]):
-        return 'Missing fields in request body', 400
+    data = request.get_json()
+    name = data.get('name')
+    email = data.get('email')
+    password = data.get('password')
     with database.batch() as batch:
+        # Update user with given ID in users table
         batch.update(
-            table=users_table,
-            columns=users_columns[1:],
-            values=[(user['name'], user['email'], user['password'])],
-            keyset=KeySet(keys=[(user_id,)]),
+            table='users',
+            columns=('user_id', 'name', 'email', 'password'),
+            values=[(user_id, name, email, password)]
         )
-    return 'User updated successfully', 200
+    return jsonify({'message': 'User updated successfully'})
 
+@app.route('/users/<int:user_id>', methods=['DELETE'])
+def delete_user(user_id):
+    with database.batch() as batch:
+        # Delete user with given ID from users table
+        batch.delete(
+            table='users',
+            keyset=KeySet(keys=[[user_id]])
+        )
+    return jsonify({'message': 'User deleted successfully'})
 
+# Start Flask application
+if __name__ == '__main__':
+    app.run()
 
