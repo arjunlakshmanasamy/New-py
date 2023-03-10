@@ -1,85 +1,68 @@
 import os
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/path/to/keyfile.json'
-from flask import Flask, request
+from flask import Flask, jsonify, request
 from google.cloud import spanner
+from google.cloud.spanner_v1 import KeySet
 
 app = Flask(__name__)
-
-# Set the Google Cloud Spanner instance and database name
 instance_id = 'your-instance-id'
 database_id = 'your-database-id'
-
-# Create a Spanner client object
-spanner_client = spanner.Client()
-
-# Get a reference to the Cloud Spanner instance
-instance = spanner_client.instance(instance_id)
-
-# Get a reference to the Cloud Spanner database
+client = spanner.Client()
+instance = client.instance(instance_id)
 database = instance.database(database_id)
 
-# Define a Flask endpoint for creating a new row in the database
-@app.route('/my_table', methods=['POST'])
-def create_row():
-    # Get the JSON data from the request body
-    data = request.json
+# Define the users table name and columns
+users_table = 'users'
+users_columns = ['user_id', 'name', 'email', 'password']
 
-    # Create a new transaction
-    with database.batch() as transaction:
-        # Insert the data into the table
-        row = (data['id'], data['name'])
-        transaction.insert('my_table', [row])
-
-    # Return a success response
-    return {'status': 'success'}
-
-# Define a Flask endpoint for reading all rows in the database
-@app.route('/my_table', methods=['GET'])
-def read_rows():
-    # Create a new transaction
+# API endpoint to get all users
+@app.route('/users', methods=['GET'])
+def get_users():
     with database.snapshot() as snapshot:
-        # Execute a SQL statement to select all rows from the table
-        results = snapshot.execute_sql('SELECT * FROM my_table')
+        results = snapshot.execute_sql(f'SELECT * FROM {users_table}')
+        users = [dict(zip(users_columns, row)) for row in results]
+        return jsonify(users)
 
-        # Create a list of dictionaries representing each row
-        rows = []
-        for row in results:
-            rows.append({'id': row[0], 'name': row[1]})
-
-    # Return the list of rows as a JSON response
-    return {'rows': rows}
-
-# Define a Flask endpoint for reading a single row in the database
-@app.route('/my_table/<int:id>', methods=['GET'])
-def read_row(id):
-    # Create a new transaction
+# API endpoint to get a specific user by ID
+@app.route('/users/<int:user_id>', methods=['GET'])
+def get_user(user_id):
     with database.snapshot() as snapshot:
-        # Execute a SQL statement to select the row with the given ID
-        params = {'id': id}
-        results = snapshot.execute_sql('SELECT * FROM my_table WHERE id = @id', params)
+        results = snapshot.execute_sql(f'SELECT * FROM {users_table} WHERE user_id = @user_id', params={'user_id': user_id})
+        row = list(results)
+        if len(row) > 0:
+            user = dict(zip(users_columns, row[0]))
+            return jsonify(user)
+        else:
+            return f'User with ID {user_id} not found', 404
 
-        # If no row was found, return a 404 response
-        row = next(results, None)
-        if row is None:
-            return {'status': 'error', 'message': f'Row with ID {id} not found'}, 404
+# API endpoint to create a new user
+@app.route('/users', methods=['POST'])
+def create_user():
+    user = request.get_json()
+    if not all(key in user for key in users_columns[1:]):
+        return 'Missing fields in request body', 400
+    with database.batch() as batch:
+        batch.insert(
+            table=users_table,
+            columns=users_columns[1:],
+            values=[(user['name'], user['email'], user['password'])]
+        )
+    return 'User created successfully', 201
 
-        # Return the row as a JSON response
-        return {'id': row[0], 'name': row[1]}
-
-# Define a Flask endpoint for updating a row in the database
-@app.route('/my_table/<int:id>', methods=['PUT'])
-def update_row(id):
-    # Get the JSON data from the request body
-    data = request.json
-
-    # Create a new transaction
-    with database.batch() as transaction:
-        # Execute a SQL statement to update the row with the given ID
-        params = {'id': id, 'name': data['name']}
-        transaction.execute_update('UPDATE my_table SET name = @name WHERE id = @id', params)
-
-    # Return a success response
-    return {'status': 'success'}
+# API endpoint to update an existing user
+@app.route('/users/<int:user_id>', methods=['PUT'])
+def update_user(user_id):
+    user = request.get_json()
+    if not all(key in user for key in users_columns[1:]):
+        return 'Missing fields in request body', 400
+    with database.batch() as batch:
+        batch.update(
+            table=users_table,
+            columns=users_columns[1:],
+            values=[(user['name'], user['email'], user['password'])],
+            keyset=KeySet(keys=[(user_id,)]),
+        )
+    return 'User updated successfully', 200
 
 
 
