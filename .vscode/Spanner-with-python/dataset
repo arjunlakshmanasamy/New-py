@@ -1,0 +1,33 @@
+CREATE TABLE users (
+  user_id INT64 NOT NULL,
+  name STRING(255) NOT NULL,
+  email STRING(255) NOT NULL,
+  password STRING(255) NOT NULL,
+  PRIMARY KEY (user_id)
+);
+
+CREATE TABLE products (
+  product_id INT64 NOT NULL,
+  name STRING(255) NOT NULL,
+  description STRING(255) NOT NULL,
+  price FLOAT64 NOT NULL,
+  inventory INT64 NOT NULL,
+  PRIMARY KEY (product_id)
+);
+
+CREATE TABLE orders (
+  order_id INT64 NOT NULL,
+  user_id INT64 NOT NULL,
+  total_price FLOAT64 NOT NULL,
+  shipping_address STRING(255) NOT NULL,
+  order_date TIMESTAMP NOT NULL,
+  PRIMARY KEY (order_id)
+);
+
+CREATE TABLE order_items (
+  order_id INT64 NOT NULL,
+  product_id INT64 NOT NULL,
+  quantity INT64 NOT NULL,
+  PRIMARY KEY (order_id, product_id),
+  INTERLEAVE IN PARENT orders ON DELETE CASCADE
+);
