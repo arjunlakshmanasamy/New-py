@@ -1,20 +1,32 @@
-#import os
-#os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/path/to/keyfile.json'
+import os
 from flask import Flask, jsonify, request
 from google.cloud import spanner
 from google.cloud.spanner_v1 import KeySet
 from google.oauth2 import service_account
 
-# Set up credentials and Spanner client
-credentials = service_account.Credentials.from_service_account_file('/path/to/service_account.json')
-spanner_client = spanner.Client(project='your-project-id', credentials=credentials)
+credentials_info = os.environ.get('SERVICE_ACCOUNT_KEY')
+credentials = service_account.Credentials.from_service_account_info(credentials_info)
+spanner_client = spanner.Client(credentials=credentials)
 instance_id = 'your-instance-id'
 database_id = 'your-database-id'
 instance = spanner_client.instance(instance_id)
 database = instance.database(database_id)
 
-# Set up Flask application
+# Set up Flask  application
 app = Flask(__name__)
+
+@app.route('/health')
+def health_check():
+    try:
+        # Perform a simple Spanner query to check the connection
+        instance = spanner_client.instance('my-instance')
+        database = instance.database('my-database')
+        with database.snapshot() as snapshot:
+            results = snapshot.execute_sql('SELECT 1')
+        if results is not None:
+            return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # Define routes for CRUD operations
 @app.route('/users', methods=['GET'])
@@ -79,4 +91,3 @@ def delete_user(user_id):
 # Start Flask application
 if __name__ == '__main__':
     app.run()
-
