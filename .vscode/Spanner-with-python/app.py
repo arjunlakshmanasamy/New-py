@@ -17,8 +17,7 @@ app = Flask(__name__)
 
 @app.route('/health')
 def health_check():
-    try:
-        # Perform a simple Spanner query to check the connection
+    try:       
         instance = spanner_client.instance('my-instance')
         database = instance.database('my-database')
         with database.snapshot() as snapshot:
